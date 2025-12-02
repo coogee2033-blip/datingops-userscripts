@@ -1,7 +1,7 @@
 // ==UserScript==
-// @name         DatingOps Panel（個別送信のみ・ドラッグ可・送信時メモ自動保存 v2025-12-01a）
+// @name         DatingOps Panel（個別送信のみ・ドラッグ可・送信時メモ自動保存 v2025-12-01b）
 // @namespace    tamper-datingops
-// @version      2025-12-01a
+// @version      2025-12-01b
 // @updateURL    https://raw.githubusercontent.com/coogee2033-blip/datingops-userscripts/main/datingops.user.js
 // @downloadURL  https://raw.githubusercontent.com/coogee2033-blip/datingops-userscripts/main/datingops.user.js
 // @description  個別送信ページだけでAIパネル表示。中央カラムから会話抽出→n8nへ送信→返信欄へ自動挿入。サイドカラム除外、クラス優先+座標fallbackの男女判定、最新20件の完全送信、profileText活用、送信フェイルオーバ、メモ候補抽出＆ふたりメモ追記機能。
@@ -15,7 +15,7 @@
 // @connect      192.168.*.*
 // ==/UserScript==
 
-console.log("TM auto-update test2 v2025-12-01a");
+console.log("TM auto-update test2 v2025-12-01b");
 
 (() => {
   "use strict";
@@ -284,6 +284,7 @@ console.log("TM auto-update test2 v2025-12-01a");
   // - conversation_long20 にプロフィールやふたりメモが混ざらないこと
   // - 右の白吹き出しが ♂, 左の緑吹き出しが ♀ になること
   // [2025-12-01a] 日付・時間を残す方針に変更、mem44 は el.matches() で確実に判定
+  // [2025-12-01b] mem44 向け X座標クラスタリングで左右判定を導入
   function scrapeConversationRaw() {
     const root = getChatRoot();
     const host = location.hostname || "";
@@ -323,6 +324,38 @@ console.log("TM auto-update test2 v2025-12-01a");
     const chatMidX = (chatRect.left + chatRect.right) / 2;
     log("chatMidX:", chatMidX, "chatRect:", chatRect.left, "-", chatRect.right);
 
+    // [2025-12-01b] mem44 向け: 吹き出しX座標クラスタリングで左右判定用しきい値を求める
+    let memSideThresholdX = null;
+    if (isMemSite && nodes.length >= 2) {
+      const xs = nodes
+        .map((el) => {
+          const r = el.getBoundingClientRect?.() || { left: 0, width: 0 };
+          return r.left + r.width / 2;
+        })
+        .filter((x) => Number.isFinite(x));
+
+      if (xs.length >= 2) {
+        const minX = Math.min(...xs);
+        const maxX = Math.max(...xs);
+        const spread = maxX - minX;
+        // 左右にちゃんと分かれていそうなときだけ有効化（数値は経験則なので軽めでOK）
+        if (spread > 40) {
+          memSideThresholdX = (minX + maxX) / 2;
+          log(
+            "[mem44] X cluster:",
+            "minX=",
+            Math.round(minX),
+            "maxX=",
+            Math.round(maxX),
+            "threshold=",
+            Math.round(memSideThresholdX)
+          );
+        } else {
+          log("[mem44] X cluster spread too small:", spread, "→ cluster disabled");
+        }
+      }
+    }
+
     const lines = [];
     for (const el of nodes) {
       // [修正1続き] サイドカラムに属する要素は会話から除外
@@ -351,41 +384,38 @@ console.log("TM auto-update test2 v2025-12-01a");
       // クラス名は大文字小文字両方でチェック（元のクラス名を保持）
       const clsOriginal = el.className || "";
 
-      // 要素の中央X座標を計算（非memサイトの座標fallback用）
+      // 要素の中央X座標を計算
       const rect = el.getBoundingClientRect?.() || { left: 0, width: 0 };
       const centerX = rect.left + rect.width / 2;
-      const isRightSide = centerX > chatMidX;
 
-      // [2025-12-01a] 役割判定：mem44 は el.matches() で確実に、他サイトは regex + 座標 fallback
+      // [2025-12-01b] 役割判定：クラス優先 → mem44クラスタ → chatMidX fallback
       let isMale = null;
       let detectionMethod = "";
 
-      // 1) mem44 用のクラスベース判定（最優先・el.matches() で確実に判定）
-      if (isMemSite) {
-        if (el.matches("div.mb_M, .mmmsg_member")) {
+      // 1) クラス優先（大文字小文字両方対応）
+      // mb_M / MB_M = Member = 男性ユーザー（右・白）
+      // mb_L / MB_L = Lady = 女性キャラ（左・緑）
+      // mmmsg_member = 男性, mmmsg_char = 女性
+      if (/\bmb_m\b/i.test(clsOriginal) || /\bmmmsg_member\b/i.test(clsOriginal)) {
         isMale = true;
-          detectionMethod = "mem44 class (mb_M/mmmsg_member)";
-        } else if (el.matches("div.mb_L, .mmmsg_char")) {
-          isMale = false;
-          detectionMethod = "mem44 class (mb_L/mmmsg_char)";
-        }
-      }
-
-      // 2) まだ決まっていなければ、従来のクラス判定（他サイト含む）
-      if (isMale === null) {
-        if (/\bmb_m\b/i.test(clsOriginal) || /\bmmmsg_member\b/i.test(clsOriginal)) {
-          isMale = true;
-          detectionMethod = "class regex (mb_M/mmmsg_member)";
-        } else if (/\bmb_l\b/i.test(clsOriginal) || /\bmmmsg_char\b/i.test(clsOriginal)) {
+        detectionMethod = "クラス(mb_M/mmmsg_member)";
+      } else if (/\bmb_l\b/i.test(clsOriginal) || /\bmmmsg_char\b/i.test(clsOriginal)) {
         isMale = false;
-          detectionMethod = "class regex (mb_L/mmmsg_char)";
-        }
+        detectionMethod = "クラス(mb_L/mmmsg_char)";
       }
 
-      // 3) それでも決まらない場合だけ座標 fallback を使う
+      // 2) クラスで決まらなければ、mem44 では X クラスタリングしきい値を優先利用
+      if (isMale === null && isMemSite && memSideThresholdX != null) {
+        const isRightSideCluster = centerX >= memSideThresholdX;
+        isMale = isRightSideCluster;
+        detectionMethod = `mem44 cluster(centerX=${Math.round(centerX)}, threshold=${Math.round(memSideThresholdX)}, right=${isRightSideCluster})`;
+      }
+
+      // 3) それでも決まらなければ chatMidX fallback（従来ロジック）
       if (isMale === null) {
-        isMale = isRightSide;
-        detectionMethod = `fallback position(centerX=${Math.round(centerX)}, midX=${Math.round(chatMidX)})`;
+        const isRightSideMid = centerX > chatMidX;
+        isMale = isRightSideMid;
+        detectionMethod = `座標(centerX=${Math.round(centerX)}, midX=${Math.round(chatMidX)}, right=${isRightSideMid})`;
       }
 
       log(`判定: ${isMale ? "♂男" : "♀女"} [${detectionMethod}] cls="${clsOriginal}" text="${raw.slice(0, 20)}..."`);
