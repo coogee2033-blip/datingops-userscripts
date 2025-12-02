@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         OLV29 Auto-Reply AI Assistant
-// @namespace    http://tampermonkey.net/
+// @namespace    tamper-datingops
 // @version      1.0
-// @description  OLV専用AIパネル（mem44互換、DOMはOLV仕様）
+// @description  OLV専用AIパネル（mem44互換、DOMだけOLV対応）
 // @author       coogee2033
 // @match        https://olv29.com/*
 // @downloadURL  https://raw.githubusercontent.com/coogee2033-blip/datingops-userscripts/main/tm/olv29.user.js?token=PUT_TOKEN_HERE
