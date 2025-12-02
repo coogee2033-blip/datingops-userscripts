@@ -1,12 +1,12 @@
 // ==UserScript==
 // @name         DatingOps Panel (mem44)
-// @namespace    http://tampermonkey.net/
+// @namespace    tamper-datingops
 // @version      1.0
-// @description  mem44 個別送信用のAIパネル（元のDatingOps Panelと同じ機能）
+// @description  mem44 個別送信用のAIパネル（元のDatingOps Panelと同等機能）
 // @author       coogee2033
 // @match        https://mem44.com/*
-// @downloadURL  https://raw.githubusercontent.com/coogee2033-blip/datingops-userscripts/main/tm/mem_panel.user.js?token=PUT_TOKEN_HERE
-// @updateURL    https://raw.githubusercontent.com/coogee2033-blip/datingops-userscripts/main/tm/mem_panel.user.js?token=PUT_TOKEN_HERE
+// @downloadURL  https://raw.githubusercontent.com/coogee2033-blip/datingops-userscripts/main/tm/mem44.user.js?token=PUT_TOKEN_HERE
+// @updateURL    https://raw.githubusercontent.com/coogee2033-blip/datingops-userscripts/main/tm/mem44.user.js?token=PUT_TOKEN_HERE
 // @grant        GM_xmlhttpRequest
 // @grant        unsafeWindow
 // @connect      localhost

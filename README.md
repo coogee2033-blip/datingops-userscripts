@@ -38,3 +38,4 @@ DatingOps 向け Tampermonkey UserScript の公開置き場です。
 
 現在のバージョン: `2025-12-01a`
 
+
