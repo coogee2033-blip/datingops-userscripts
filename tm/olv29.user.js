@@ -1,12 +1,12 @@
 // ==UserScript==
 // @name         OLV29 Auto-Reply AI Assistant
 // @namespace    tamper-datingops
-// @version      1.2
+// @version      1.3
 // @description  OLV専用AIパネル（mem44互換、DOMだけOLV対応）
 // @author       coogee2033
 // @match        https://olv29.com/*
-// @downloadURL  https://raw.githubusercontent.com/coogee2033-blip/datingops-userscripts/main/tm/olv29.user.js?token= PUT_TOKEN_HERE
-// @updateURL    https://raw.githubusercontent.com/coogee2033-blip/datingops-userscripts/main/tm/olv29.user.js?token= PUT_TOKEN_HERE
+// @downloadURL  https://raw.githubusercontent.com/coogee2033-blip/datingops-userscripts/main/tm/olv29.user.js
+// @updateURL    https://raw.githubusercontent.com/coogee2033-blip/datingops-userscripts/main/tm/olv29.user.js
 // @grant        GM_xmlhttpRequest
 // @grant        unsafeWindow
 // @connect      localhost
@@ -34,7 +34,7 @@
     - div.inbox
 */
 
-console.log("OLV29 Auto-Reply AI Assistant v1.2");
+console.log("OLV29 Auto-Reply AI Assistant v1.3");
 
 (() => {
   "use strict";
@@ -298,37 +298,38 @@ console.log("OLV29 Auto-Reply AI Assistant v1.2");
   }
 
   /** ===== 男女判定関数（OLV専用） ===== */
-  function detectSpeakerForOlvMessage(msg, sideThresholdX, viewportMidX) {
+  function detectSpeakerForOlvMessage(msg, thresholdX, viewportWidth) {
     const el = msg.el;
     let speaker = "female"; // デフォルト
-    let method = "default";
+    let method = "default female";
 
     const centerX = msg.centerX;
-    const className = el.className || "";
+    const viewportMidX = viewportWidth / 2;
 
-    // 1) クラスによる明示的判定（あれば最優先）
-    if (className.includes("align-right")) {
+    // 1) classList.contains() による明示的判定（最優先）
+    if (el.classList && el.classList.contains("align-right")) {
       speaker = "male";
-      method = "class:align-right";
-    } else if (className.includes("align-left")) {
+      method = "class align-right";
+    } else if (el.classList && el.classList.contains("align-left")) {
       speaker = "female";
-      method = "class:align-left";
-    } else if (sideThresholdX != null) {
+      method = "class align-left";
+    } else if (thresholdX != null && Number.isFinite(centerX)) {
       // 2) Xクラスタによる左右判定
-      const isRight = centerX >= sideThresholdX;
-      // 右側＝male、左側＝female（逆なら後で flip）
+      const isRight = centerX > thresholdX;
       speaker = isRight ? "male" : "female";
-      method = `cluster(centerX=${Math.round(centerX)}, threshold=${Math.round(sideThresholdX)}, isRight=${isRight})`;
-    } else {
+      method = `cluster(centerX=${Math.round(centerX)}, threshold=${Math.round(thresholdX)}, isRight=${isRight})`;
+    } else if (Number.isFinite(centerX) && Number.isFinite(viewportMidX)) {
       // 3) ビューポート中央による簡易判定
-      const isRight = centerX >= viewportMidX;
+      const isRight = centerX > viewportMidX;
       speaker = isRight ? "male" : "female";
       method = `mid(centerX=${Math.round(centerX)}, mid=${Math.round(viewportMidX)}, isRight=${isRight})`;
     }
+    // 4) それでも判定不能なら speaker="female", method="default female" のまま
 
-    console.debug("[OLV29] speaker detection:", {
+    console.debug("[OLV29] speaker detection", {
       speaker,
       method,
+      className: el.className,
       text: msg.rawText.slice(0, 30),
     });
 
@@ -430,12 +431,12 @@ console.log("OLV29 Auto-Reply AI Assistant v1.2");
     }
 
     // X座標クラスタリング
-    const sideThresholdX = computeSideThresholdXFromMessages(chronological);
-    const viewportMidX = window.innerWidth / 2;
+    const thresholdX = computeSideThresholdXFromMessages(chronological);
+    const viewportWidth = window.innerWidth;
 
     // structured 配列を作成
     const structured = chronological.map((msg) => {
-      const speaker = detectSpeakerForOlvMessage(msg, sideThresholdX, viewportMidX);
+      const speaker = detectSpeakerForOlvMessage(msg, thresholdX, viewportWidth);
 
       // ノイズ削り：開封済み などは消す
       const text = msg.rawText.replace(/開封済み/g, "").trim();
@@ -447,8 +448,12 @@ console.log("OLV29 Auto-Reply AI Assistant v1.2");
       };
     }).filter((entry) => entry.text);
 
+    // デバッグログ
     log("抽出結果:", structured.length, "件");
-    console.log("[OLV29] scrapeConversationStructured sample (last 6):", structured.slice(-6));
+    console.debug("[OLV29] scrapeConversationStructured sample (last 6):", structured.slice(-6));
+    const maleCount = structured.filter((m) => m.speaker === "male").length;
+    const femaleCount = structured.filter((m) => m.speaker === "female").length;
+    console.debug("[OLV29] speaker breakdown:", { male: maleCount, female: femaleCount });
 
     return structured;
   }
