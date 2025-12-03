@@ -1,12 +1,12 @@
 // ==UserScript==
 // @name         OLV29 Auto-Reply AI Assistant
 // @namespace    tamper-datingops
-// @version      1.0
+// @version      1.1
 // @description  OLV専用AIパネル（mem44互換、DOMだけOLV対応）
 // @author       coogee2033
 // @match        https://olv29.com/*
-// @downloadURL  https://raw.githubusercontent.com/coogee2033-blip/datingops-userscripts/main/tm/olv29.user.js?token=PUT_TOKEN_HERE
-// @updateURL    https://raw.githubusercontent.com/coogee2033-blip/datingops-userscripts/main/tm/olv29.user.js?token=PUT_TOKEN_HERE
+// @downloadURL  https://raw.githubusercontent.com/coogee2033-blip/datingops-userscripts/main/tm/olv29.user.js?token= PUT_TOKEN_HERE
+// @updateURL    https://raw.githubusercontent.com/coogee2033-blip/datingops-userscripts/main/tm/olv29.user.js?token= PUT_TOKEN_HERE
 // @grant        GM_xmlhttpRequest
 // @grant        unsafeWindow
 // @connect      localhost
@@ -34,7 +34,7 @@
     - div.inbox
 */
 
-console.log("OLV29 Auto-Reply AI Assistant v1.0");
+console.log("OLV29 Auto-Reply AI Assistant v1.1");
 
 (() => {
   "use strict";
@@ -270,6 +270,33 @@ console.log("OLV29 Auto-Reply AI Assistant v1.0");
     return qs("table.inbox_chat") || qs(".inbox") || document.body;
   }
 
+  /** ===== X座標クラスタリング関数（男女判定用） ===== */
+  function computeSideThresholdX(messageElements) {
+    const xs = [];
+    for (const el of messageElements) {
+      const rect = el.getBoundingClientRect();
+      if (!rect) continue;
+      const centerX = rect.left + rect.width / 2;
+      if (Number.isFinite(centerX)) {
+        xs.push(centerX);
+      }
+    }
+    if (xs.length < 2) {
+      console.debug("[OLV29] computeSideThresholdX: not enough elements", xs.length);
+      return null;
+    }
+    const minX = Math.min(...xs);
+    const maxX = Math.max(...xs);
+    const spread = maxX - minX;
+    if (spread < 40) {
+      console.debug("[OLV29] computeSideThresholdX: spread too small", spread);
+      return null;
+    }
+    const threshold = (minX + maxX) / 2;
+    console.debug("[OLV29] X cluster:", { minX: Math.round(minX), maxX: Math.round(maxX), threshold: Math.round(threshold), count: xs.length });
+    return threshold;
+  }
+
   /** ===== 会話抽出（OLV専用: align-left/align-right で男女判定） ===== */
   // [OLV差分] mem44 の mb_M/mb_L/mmmsg_* クラスではなく、
   //           align-left = 女性、align-right = 男性 で判定
@@ -296,26 +323,8 @@ console.log("OLV29 Auto-Reply AI Assistant v1.0");
     const chatMidX = (chatRect.left + chatRect.right) / 2;
     log("chatMidX:", chatMidX);
 
-    // X座標クラスタリング
-    let sideThresholdX = null;
-    if (nodes.length >= 2) {
-      const xs = nodes
-        .map((el) => {
-          const r = el.getBoundingClientRect?.() || { left: 0, width: 0 };
-          return r.left + r.width / 2;
-        })
-        .filter((x) => Number.isFinite(x));
-
-      if (xs.length >= 2) {
-        const minX = Math.min(...xs);
-        const maxX = Math.max(...xs);
-        const spread = maxX - minX;
-        if (spread > 40) {
-          sideThresholdX = (minX + maxX) / 2;
-          log("[OLV29] X cluster: minX=", Math.round(minX), "maxX=", Math.round(maxX), "threshold=", Math.round(sideThresholdX));
-        }
-      }
-    }
+    // X座標クラスタリング（共通関数を使用）
+    const sideThresholdX = computeSideThresholdX(nodes);
 
     const lines = [];
     for (const el of nodes) {
