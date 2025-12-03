@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         OLV29 Auto-Reply AI Assistant
 // @namespace    tamper-datingops
-// @version      1.3
+// @version      1.4
 // @description  OLV専用AIパネル（mem44互換、DOMだけOLV対応）
 // @author       coogee2033
 // @match        https://olv29.com/*
@@ -34,7 +34,7 @@
     - div.inbox
 */
 
-console.log("OLV29 Auto-Reply AI Assistant v1.3");
+console.log("OLV29 Auto-Reply AI Assistant v1.4");
 
 (() => {
   "use strict";
@@ -306,34 +306,51 @@ console.log("OLV29 Auto-Reply AI Assistant v1.3");
     const centerX = msg.centerX;
     const viewportMidX = viewportWidth / 2;
 
-    // 1) classList.contains() による明示的判定（最優先）
-    if (el.classList && el.classList.contains("align-right")) {
+    // align 属性を取得（OLV の実際の DOM は align="left" / align="right"）
+    const alignAttr = (el.getAttribute("align") || "").toLowerCase();
+
+    // 優先度 1: align 属性による判定（最優先）
+    if (alignAttr === "right") {
+      speaker = "male";
+      method = 'attr align="right"';
+    } else if (alignAttr === "left") {
+      speaker = "female";
+      method = 'attr align="left"';
+    }
+    // 優先度 2: クラス名による判定（将来変更に備えた fallback）
+    else if (el.classList && el.classList.contains("align-right")) {
       speaker = "male";
       method = "class align-right";
     } else if (el.classList && el.classList.contains("align-left")) {
       speaker = "female";
       method = "class align-left";
-    } else if (thresholdX != null && Number.isFinite(centerX)) {
-      // 2) Xクラスタによる左右判定
+    }
+    // 優先度 3: X座標クラスタリングによる左右判定
+    else if (thresholdX != null && Number.isFinite(centerX)) {
       const isRight = centerX > thresholdX;
       speaker = isRight ? "male" : "female";
       method = `cluster(centerX=${Math.round(centerX)}, threshold=${Math.round(thresholdX)}, isRight=${isRight})`;
-    } else if (Number.isFinite(centerX) && Number.isFinite(viewportMidX)) {
-      // 3) ビューポート中央による簡易判定
+    }
+    // 優先度 4: ビューポート中央による簡易判定
+    else if (Number.isFinite(centerX) && Number.isFinite(viewportMidX)) {
       const isRight = centerX > viewportMidX;
       speaker = isRight ? "male" : "female";
       method = `mid(centerX=${Math.round(centerX)}, mid=${Math.round(viewportMidX)}, isRight=${isRight})`;
     }
-    // 4) それでも判定不能なら speaker="female", method="default female" のまま
+    // 優先度 5: それでも判定不能なら speaker="female", method="default female" のまま
 
+    // デバッグログ
+    const raw = el.innerText || el.textContent || "";
+    const textSnippet = raw.trim().slice(0, 20);
     console.debug("[OLV29] speaker detection", {
       speaker,
       method,
+      alignAttr,
       className: el.className,
-      text: msg.rawText.slice(0, 30),
+      text: textSnippet,
     });
 
-    return speaker;
+    return { speaker, method };
   }
 
   /** ===== 会話抽出（OLV専用: 時系列ソート + X座標クラスタ） ===== */
@@ -436,7 +453,7 @@ console.log("OLV29 Auto-Reply AI Assistant v1.3");
 
     // structured 配列を作成
     const structured = chronological.map((msg) => {
-      const speaker = detectSpeakerForOlvMessage(msg, thresholdX, viewportWidth);
+      const { speaker } = detectSpeakerForOlvMessage(msg, thresholdX, viewportWidth);
 
       // ノイズ削り：開封済み などは消す
       const text = msg.rawText.replace(/開封済み/g, "").trim();
