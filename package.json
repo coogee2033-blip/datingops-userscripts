@@ -1,0 +1,19 @@
+{
+  "name": "datingops-userscripts",
+  "version": "1.0.0",
+  "description": "Tampermonkey userscripts for DatingOps",
+  "main": "index.js",
+  "type": "module",
+  "scripts": {
+    "check:mem44": "ts-node scripts/check-mem44-sync.ts"
+  },
+  "keywords": [],
+  "author": "coogee2033",
+  "license": "ISC",
+  "devDependencies": {
+    "@types/node": "^22.10.1",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.7.2"
+  }
+}
+

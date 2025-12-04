@@ -1,0 +1,10 @@
+# Node
+node_modules/
+
+# Temporary files
+tmp/*.js
+!tmp/.gitkeep
+
+# OS files
+.DS_Store
+
