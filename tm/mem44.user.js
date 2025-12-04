@@ -5,8 +5,8 @@
 // @description  mem44 個別送信用のAIパネル（元のDatingOps Panelと同等機能）
 // @author       coogee2033
 // @match        https://mem44.com/*
-// @downloadURL  https://raw.githubusercontent.com/coogee2033-blip/datingops-userscripts/main/tm/mem44.user.js?token= PUT_TOKEN_HERE
-// @updateURL    https://raw.githubusercontent.com/coogee2033-blip/datingops-userscripts/main/tm/mem44.user.js?token= PUT_TOKEN_HERE
+// @downloadURL  https://raw.githubusercontent.com/coogee2033-blip/datingops-userscripts/main/tm/mem44.user.js
+// @updateURL    https://raw.githubusercontent.com/coogee2033-blip/datingops-userscripts/main/tm/mem44.user.js
 // @grant        GM_xmlhttpRequest
 // @grant        unsafeWindow
 // @connect      localhost
