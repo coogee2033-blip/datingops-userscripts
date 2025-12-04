@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         OLV29 Auto-Reply AI Assistant
 // @namespace    tamper-datingops
-// @version      1.6
+// @version      1.7
 // @description  OLV専用AIパネル（mem44互換、DOMだけOLV対応）
 // @author       coogee2033
 // @match        https://olv29.com/*
@@ -426,7 +426,7 @@ console.log("OLV29 Auto-Reply AI Assistant v1.6");
     // デバッグログ
     const maleCount = all.filter((m) => m.speaker === "male").length;
     const femaleCount = all.filter((m) => m.speaker === "female").length;
-    console.log("[OLV29] scrapeConversationStructured:", {
+    console.log("[OLV29 v1.7] scrapeConversationStructured:", {
       total: all.length,
       male: maleCount,
       female: femaleCount,
@@ -987,12 +987,12 @@ console.log("OLV29 Auto-Reply AI Assistant v1.6");
     const conv20 = conv.last20.map(m => ({ role: m.speaker, text: m.text }));
 
     // デバッグ用ログ
-    console.debug("[OLV29] scrapeConversationStructured:", {
+    console.debug("[OLV29 v1.7] scrapeConversationStructured:", {
       total: conv.all.length,
       male: conv.all.filter(m => m.speaker === "male").length,
       female: conv.all.filter(m => m.speaker === "female").length,
     });
-    console.debug("[OLV29] conversation sample (last 6):",
+    console.debug("[OLV29 v1.7] conversation sample (last 6):",
       conv6.map((m, idx) => ({ idx, role: m.role, text: m.text.slice(0, 50) }))
     );
 
@@ -1011,7 +1011,7 @@ console.log("OLV29 Auto-Reply AI Assistant v1.6");
     setStatus("送信中…", "#ffa94d");
     try {
       const payload = await buildWebhookPayload();
-      console.log("[OLV29] sending payload to n8n:", payload);
+      console.log("[OLV29 v1.7] sending payload to n8n:", payload);
       const res = await postJSONWithFallback(payload);
       setStatus("ok (200)", "#4ade80");
       const reply =
@@ -1099,7 +1099,7 @@ console.log("OLV29 Auto-Reply AI Assistant v1.6");
     (async () => {
       try {
         const payload = await buildWebhookPayload();
-        console.log("[OLV29] sending payload to n8n (auto-on-load):", payload);
+        console.log("[OLV29 v1.7] sending payload to n8n (auto-on-load):", payload);
         const res = await postJSONWithFallback(payload);
         setStatus("ok (auto)", "#4ade80");
         const reply =

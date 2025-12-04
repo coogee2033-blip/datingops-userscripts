@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         MEM44 Auto-Reply AI Assistant
 // @namespace    tamper-datingops
-// @version      2.3
+// @version      2.4
 // @description  mem44 個別送信用のAIパネル（元のDatingOps Panelと同等機能）
 // @author       coogee2033
 // @match        https://mem44.com/*
@@ -406,7 +406,7 @@ console.log("MEM44 Auto-Reply AI Assistant v2.3");
     // デバッグログ
     const maleCount = all.filter((m) => m.speaker === "male").length;
     const femaleCount = all.filter((m) => m.speaker === "female").length;
-    console.log("[MEM44] scrapeConversationStructured:", {
+    console.log("[MEM44 v2.4] scrapeConversationStructured:", {
       total: all.length,
       male: maleCount,
       female: femaleCount,
@@ -977,12 +977,12 @@ console.log("MEM44 Auto-Reply AI Assistant v2.3");
     const conv20 = conv.last20.map(m => ({ role: m.speaker, text: m.text }));
 
     // デバッグ用ログ
-    console.debug("[MEM44] scrapeConversationStructured:", {
+    console.debug("[MEM44 v2.4] scrapeConversationStructured:", {
       total: conv.all.length,
       male: conv.all.filter(m => m.speaker === "male").length,
       female: conv.all.filter(m => m.speaker === "female").length,
     });
-    console.debug("[MEM44] conversation sample (last 6):",
+    console.debug("[MEM44 v2.4] conversation sample (last 6):",
       conv6.map((m, idx) => ({ idx, role: m.role, text: m.text.slice(0, 50) }))
     );
 
@@ -1001,7 +1001,7 @@ console.log("MEM44 Auto-Reply AI Assistant v2.3");
     setStatus("送信中…", "#ffa94d");
     try {
       const payload = await buildWebhookPayload();
-      console.log("[DatingOps] sending payload to n8n:", payload);
+      console.log("[MEM44 v2.4] sending payload to n8n:", payload);
       const res = await postJSONWithFallback(payload);
       setStatus("ok (200)", "#4ade80");
       const reply =
@@ -1089,7 +1089,7 @@ console.log("MEM44 Auto-Reply AI Assistant v2.3");
     (async () => {
       try {
         const payload = await buildWebhookPayload();
-        console.log("[DatingOps] sending payload to n8n (auto-on-load):", payload);
+        console.log("[MEM44 v2.4] sending payload to n8n (auto-on-load):", payload);
         const res = await postJSONWithFallback(payload);
         setStatus("ok (auto)", "#4ade80");
         const reply =
