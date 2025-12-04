@@ -374,149 +374,84 @@ console.log("OLV29 Auto-Reply AI Assistant v1.6");
     return { speaker, method };
   }
 
-  /** ===== 会話抽出（OLV専用: 時系列ソート + X座標クラスタ） ===== */
-  function scrapeConversationStructured() {
-    const root = getChatRoot();
+  /**
+   * ===== 会話抽出（OLV29 専用: シンプル版） =====
+   * mmsg_char / mmsg_member クラスだけで男女判定
+   * 返り値: { all, last6, last20 }
+   */
+  function scrapeConversationStructured(rootOverride) {
+    const root = rootOverride || getChatRoot() || document;
 
-    // サイドカラムを除外対象として取得
-    const sideBlocks = [
-      qs(".left_col") || qs(".char_info"),
-      qs(".right_col") || qs(".user_info") || qs("table.staff_cs"),
-    ].filter(Boolean);
-
-    // OLV専用: mmsg_char / mmsg_member クラスで男女バルーンを取得
+    // mmsg_char（キャラ=女性）と mmsg_member（メンバー=男性）を取得
     const selectors = "div.mmsg_char, div.mmsg_member";
-    let messageEls = qsa(selectors, root);
-    messageEls = messageEls.filter((el) => (el.innerText || "").trim());
+    const nodes = Array.from(root.querySelectorAll(selectors));
 
-    log("会話ノード候補数:", messageEls.length, "root:", root?.className || root?.id || "body");
+    log("[OLV29] scrapeConversationStructured: found", nodes.length, "nodes");
 
-    // 各メッセージ要素から情報を取得
-    const rawMessages = messageEls.map((el, index) => {
-      // サイドカラムに属する要素は除外
-      if (sideBlocks.some((b) => b.contains(el))) {
-        return null;
+    // 各ノードから { speaker, text } を抽出
+    const all = [];
+    for (const el of nodes) {
+      // クラス名だけで speaker を決定（100% 確実）
+      let speaker = "unknown";
+      if (el.classList.contains("mmsg_char")) {
+        speaker = "female";
+      } else if (el.classList.contains("mmsg_member")) {
+        speaker = "male";
       }
 
-      const rect = el.getBoundingClientRect() || { left: 0, width: 0, top: 0, height: 0 };
-      const centerX = rect.left + rect.width / 2;
-      const centerY = rect.top + rect.height / 2;
-      const rawText = (el.innerText || el.textContent || "").replace(/\s+/g, " ").trim();
+      // テキスト取得（空白正規化）
+      const text = (el.innerText || "").replace(/\s+/g, " ").trim();
 
-      if (!rawText) return null;
-
-      // プロフィールヘッダーを除外
-      if (/^\d{6}\s/.test(rawText)) {
-        log("プロフィールヘッダー除外:", rawText.slice(0, 40));
-        return null;
-      }
-
-      // 自由メモ欄のテキストを除外
-      if (/^自分\s*:/.test(rawText)) {
-        log("自由メモ除外:", rawText.slice(0, 40));
-        return null;
-      }
+      // 空テキストは除外
+      if (!text) continue;
 
       // 管理テキスト類を除外
       const isAdminMeta =
-        /(管理者メモ|自己紹介文|使用絵文字・顔文字|残り\s*\d+\s*pt|入金|本登録|最終アクセス|累計送信数|返信文グループ|自由メモ|ジャンル|エロ・セフレ募集系|ポイント残高|ふたりメモ|キャラ情報|ユーザー情報)/.test(rawText);
-      if (isAdminMeta) {
-        log("管理テキスト除外:", rawText.slice(0, 30));
-        return null;
-      }
+        /(管理者メモ|自己紹介文|使用絵文字・顔文字|残り\s*\d+\s*pt|入金|本登録|最終アクセス|累計送信数|返信文グループ|自由メモ|ジャンル|エロ・セフレ募集系|ポイント残高|ふたりメモ|キャラ情報|ユーザー情報)/.test(text);
+      if (isAdminMeta) continue;
 
-      // 日付っぽい "12/03 15:06" を抜き出して epoch に
-      let ts = null;
-      const m = rawText.match(/(\d{1,2})\/(\d{1,2})\s+(\d{1,2}):(\d{2})/);
-      if (m) {
-        const year = new Date().getFullYear();
-        const month = Number(m[1]) - 1;
-        const day = Number(m[2]);
-        const hour = Number(m[3]);
-        const minute = Number(m[4]);
-        ts = new Date(year, month, day, hour, minute).getTime();
-      }
+      // プロフィールヘッダー除外
+      if (/^\d{6}\s/.test(text)) continue;
 
-      return { el, index, rect, centerX, centerY, rawText, ts, top: rect.top };
-    }).filter(Boolean);
+      // 「開封済み」削除
+      const cleanText = text.replace(/開封済み/g, "").trim();
+      if (!cleanText) continue;
 
-    log("有効メッセージ数:", rawMessages.length);
-
-    if (rawMessages.length === 0) {
-      console.warn("[OLV29] scrapeConversationStructured: no messages found");
-      return [];
+      all.push({ speaker, text: cleanText });
     }
 
-    // 画面上の縦位置 top でソート
-    rawMessages.sort((a, b) => a.top - b.top);
-
-    // 時系列を古い→新しいに揃える（上が古いか新しいかを自動判定）
-    let chronological = rawMessages.slice();
-    const withTs = chronological.filter((m) => m.ts !== null);
-    if (withTs.length >= 2) {
-      const firstTs = withTs[0].ts;
-      const lastTs = withTs[withTs.length - 1].ts;
-      if (firstTs > lastTs) {
-        // 画面上部の方が新しい場合は反転
-        chronological.reverse();
-        console.debug("[OLV29] chronological: reversed by timestamp (top is newer)");
-      } else {
-        console.debug("[OLV29] chronological: top is oldest");
-      }
-    } else {
-      console.debug("[OLV29] chronological: not enough timestamps, keep visual order (top=oldest)");
-    }
-
-    // X座標クラスタリング
-    const thresholdX = computeSideThresholdXFromMessages(chronological);
-    const viewportWidth = window.innerWidth;
-
-    // structured 配列を作成
-    const structured = chronological.map((msg) => {
-      const el = msg.el;
-      let speaker = "female"; // デフォルト
-      let detectionMethod = "";
-
-      // ① クラス名による最優先判定（mmsg_char / mmsg_member）
-      if (el.classList.contains("mmsg_char")) {
-        speaker = "female";
-        detectionMethod = "class mmsg_char";
-      } else if (el.classList.contains("mmsg_member")) {
-        speaker = "male";
-        detectionMethod = "class mmsg_member";
-      } else {
-        // ② それでも決められない場合は、既存の fallback ロジックを使う
-        const detected = detectSpeakerForOlvMessage(msg, thresholdX, viewportWidth);
-        speaker = detected.speaker || "female";
-        detectionMethod = detected.method || "fallback";
-      }
-
-      console.debug(`[OLV29] speaker: ${speaker} [${detectionMethod}] cls="${el.className || ''}" text="${msg.rawText.slice(0, 20)}..."`);
-
-      // ノイズ削り：開封済み などは消す
-      const text = msg.rawText.replace(/開封済み/g, "").trim();
-
-      return text ? {
-        speaker, // "male" or "female"
-        text,
-        timestamp: null,
-      } : null;
-    }).filter(Boolean);
+    const last20 = all.slice(-20);
+    const last6 = all.slice(-6);
 
     // デバッグログ
-    log("抽出結果:", structured.length, "件");
-    console.debug("[OLV29] scrapeConversationStructured sample (last 6):", structured.slice(-6));
-    const maleCount = structured.filter((m) => m.speaker === "male").length;
-    const femaleCount = structured.filter((m) => m.speaker === "female").length;
-    console.debug("[OLV29] speaker breakdown:", { male: maleCount, female: femaleCount });
+    const maleCount = all.filter((m) => m.speaker === "male").length;
+    const femaleCount = all.filter((m) => m.speaker === "female").length;
+    console.log("[OLV29] scrapeConversationStructured:", {
+      total: all.length,
+      male: maleCount,
+      female: femaleCount,
+    });
+    console.log(
+      "[OLV29] sample (last 6):",
+      last6.map((m, i) => ({ idx: i, speaker: m.speaker, text: m.text.slice(0, 40) }))
+    );
 
-    return structured;
+    return { all, last6, last20 };
   }
+
+  // DEBUG helper (keep as comment for manual console testing):
+  // [...document.querySelectorAll('div.mmsg_char, div.mmsg_member')]
+  //   .slice(-10)
+  //   .map((el, i) => ({
+  //     idx: i,
+  //     role: el.classList.contains('mmsg_char') ? 'female(char)' : 'male(member)',
+  //     text: (el.innerText || '').trim().slice(0, 50),
+  //   }));
 
   /** ===== 旧互換: テキスト形式で会話取得 ===== */
   function scrapeConversationRaw() {
-    const structured = scrapeConversationStructured();
-    return structured.map((entry) => {
+    const { all } = scrapeConversationStructured();
+    return all.map((entry) => {
       const who = entry.speaker === "male" ? "♂" : "♀";
       return `${who} ${entry.text}`;
     });
@@ -1076,31 +1011,30 @@ console.log("OLV29 Auto-Reply AI Assistant v1.6");
   }
 
   async function buildWebhookPayload() {
-    // 新しい構造化会話取得（時系列ソート済み、男女判定済み）
-    const allStructured = scrapeConversationStructured();
-
-    // 最新 20 件と最新 6 件を切り出し（古い→新しい順のまま）
-    const last20 = allStructured.slice(-20);
-    const last6 = last20.slice(-6);
+    // 新しい構造化会話取得（クラス名だけで男女判定）
+    const conv = scrapeConversationStructured();
 
     const profileText = getSideInfoText() || "";
 
-    log("[OLV29] conv6:", last6);
-    log("[OLV29] conv20:", last20);
-    log("[OLV29] profileText:", profileText.slice(0, 100) + "...");
-
-    // デバッグ: 男女の内訳を表示
-    const maleCount = last20.filter((e) => e.speaker === "male").length;
-    const femaleCount = last20.filter((e) => e.speaker === "female").length;
-    console.log(`[OLV29] speaker breakdown: male=${maleCount}, female=${femaleCount}`);
+    // デバッグ用ログ
+    console.log("[OLV29] buildWebhookPayload:", {
+      total: conv.all.length,
+      last6: conv.last6.length,
+      last20: conv.last20.length,
+    });
+    console.log("[OLV29] conversation sample:", conv.last6.map((m, i) => ({
+      idx: i,
+      speaker: m.speaker,
+      text: m.text.slice(0, 30),
+    })));
 
     return {
       site: getSiteId(),
       threadId: getThreadId(),
       tone: getToneSetting(),
       blueStage: getBlueStage(),
-      conversation: last6,
-      conversation_long20: last20,
+      conversation: conv.last6,
+      conversation_long20: conv.last20,
       profileText,
     };
   }
@@ -1137,9 +1071,9 @@ console.log("OLV29 Auto-Reply AI Assistant v1.6");
   async function sendMemoUpdate() {
     setStatus("メモ更新中…", "#a855f7");
     try {
-      // 会話（構造化）を取得して、最大20件まで渡す
-      const allStructured = scrapeConversationStructured();
-      const conversation_long20 = allStructured.slice(-20);
+      // 新しい構造化会話取得
+      const conv = scrapeConversationStructured();
+      const conversation_long20 = conv.last20;
 
       // プロフィール
       const profileText = getSideInfoText() || "";

@@ -354,142 +354,84 @@ console.log("MEM44 Auto-Reply AI Assistant v2.3");
     return { speaker: "male", method: "default fallback" };
   }
 
-  /** ===== 会話抽出（mem44専用: OLV29と同一構造） ===== */
-  function scrapeConversationStructured() {
-    const root = getChatRoot();
+  /**
+   * ===== 会話抽出（MEM44 専用: シンプル版） =====
+   * mmsg_char / mmsg_member クラスだけで男女判定
+   * 返り値: { all, last6, last20 }
+   */
+  function scrapeConversationStructured(rootOverride) {
+    const root = rootOverride || getChatRoot() || document;
 
-    // 左右サイドカラムを除外対象として取得
-    const sideBlocks = [
-      qs(".left_col") || qs(".キャラ情報") || qs(".char_info"),
-      qs(".right_col") || qs(".ユーザー情報") || qs(".user_info"),
-    ].filter(Boolean);
-
-    // mem44専用: mmsg_char / mmsg_member クラスで男女バルーンを取得
+    // mmsg_char（キャラ=女性）と mmsg_member（メンバー=男性）を取得
     const selectors = "div.mmsg_char, div.mmsg_member";
-    let nodes = qsa(selectors, root);
-    nodes = nodes.filter((el) => (el.innerText || "").trim());
+    const nodes = Array.from(root.querySelectorAll(selectors));
 
-    log("会話ノード数:", nodes.length, "root:", root?.className || root?.id || "body");
+    log("[MEM44] scrapeConversationStructured: found", nodes.length, "nodes");
 
-    // 会話カラムの中央X座標を計算（座標fallback用）
-    const chatRect = root.getBoundingClientRect?.() || {
-      left: 0,
-      right: window.innerWidth,
-    };
-    const chatMidX = (chatRect.left + chatRect.right) / 2;
-    log("chatMidX:", chatMidX, "chatRect:", chatRect.left, "-", chatRect.right);
-
-    // 各メッセージ要素から情報を取得
-    const rawMessages = [];
+    // 各ノードから { speaker, text } を抽出
+    const all = [];
     for (const el of nodes) {
-      // サイドカラムに属する要素は会話から除外
-      if (sideBlocks.some((b) => b.contains(el))) {
-        log("サイドカラム除外:", el.innerText?.slice(0, 30));
-        continue;
+      // クラス名だけで speaker を決定（100% 確実）
+      let speaker = "unknown";
+      if (el.classList.contains("mmsg_char")) {
+        speaker = "female";
+      } else if (el.classList.contains("mmsg_member")) {
+        speaker = "male";
       }
 
-      const raw = (el.innerText || "").replace(/\s+/g, " ").trim();
-      if (!raw) continue;
+      // テキスト取得（空白正規化）
+      const text = (el.innerText || "").replace(/\s+/g, " ").trim();
 
-      // プロフィールヘッダーを除外
-      if (/^\d{6}\s/.test(raw)) {
-        log("プロフィールヘッダー除外:", raw.slice(0, 40));
-        continue;
-      }
+      // 空テキストは除外
+      if (!text) continue;
 
-      // 自由メモ欄のテキストを除外
-      if (/^自分\s*:/.test(raw)) {
-        log("自由メモ除外:", raw.slice(0, 40));
-        continue;
-      }
-
-      // 管理テキスト類は conversation から除外する
+      // 管理テキスト類を除外
       const isAdminMeta =
-        /(管理者メモ|自己紹介文|使用絵文字・顔文字|残り\s*\d+\s*pt|入金|本登録|最終アクセス|累計送信数|返信文グループ|自由メモ|ジャンル|エロ・セフレ募集系|ポイント残高|ふたりメモ|キャラ情報|ユーザー情報)/.test(raw);
-      if (isAdminMeta) {
-        log("管理テキスト除外:", raw.slice(0, 30));
-        continue;
-      }
+        /(管理者メモ|自己紹介文|使用絵文字・顔文字|残り\s*\d+\s*pt|入金|本登録|最終アクセス|累計送信数|返信文グループ|自由メモ|ジャンル|エロ・セフレ募集系|ポイント残高|ふたりメモ|キャラ情報|ユーザー情報)/.test(text);
+      if (isAdminMeta) continue;
 
-      const rect = el.getBoundingClientRect?.() || { left: 0, width: 0, top: 0, height: 0 };
-      const centerX = rect.left + rect.width / 2;
-      const top = rect.top;
+      // プロフィールヘッダー除外
+      if (/^\d{6}\s/.test(text)) continue;
 
-      // 日付っぽい "12/03 15:06" を抜き出して epoch に
-      let ts = null;
-      const m = raw.match(/(\d{1,2})\/(\d{1,2})\s+(\d{1,2}):(\d{2})/);
-      if (m) {
-        const year = new Date().getFullYear();
-        const month = Number(m[1]) - 1;
-        const day = Number(m[2]);
-        const hour = Number(m[3]);
-        const minute = Number(m[4]);
-        ts = new Date(year, month, day, hour, minute).getTime();
-      }
+      // 「開封済み」削除
+      const cleanText = text.replace(/開封済み/g, "").trim();
+      if (!cleanText) continue;
 
-      rawMessages.push({ el, raw, rect, centerX, top, ts });
+      all.push({ speaker, text: cleanText });
     }
 
-    log("有効メッセージ数:", rawMessages.length);
-
-    if (rawMessages.length === 0) {
-      console.warn("[MEM44] scrapeConversationStructured: no messages found");
-      return [];
-    }
-
-    // 画面上の縦位置 top でソート
-    rawMessages.sort((a, b) => a.top - b.top);
-
-    // 時系列を古い→新しいに揃える（上が古いか新しいかを自動判定）
-    let chronological = rawMessages.slice();
-    const withTs = chronological.filter((m) => m.ts !== null);
-    if (withTs.length >= 2) {
-      const firstTs = withTs[0].ts;
-      const lastTs = withTs[withTs.length - 1].ts;
-      if (firstTs > lastTs) {
-        // 画面上部の方が新しい場合は反転
-        chronological.reverse();
-        console.debug("[MEM44] chronological: reversed by timestamp (top is newer)");
-      } else {
-        console.debug("[MEM44] chronological: top is oldest");
-      }
-    } else {
-      console.debug("[MEM44] chronological: not enough timestamps, keep visual order (top=oldest)");
-    }
-
-    // 構造化配列を作成
-    const structured = chronological.map((msg) => {
-      // detectSpeaker ヘルパーで speaker を判定
-      const { speaker, method } = detectSpeaker(msg.el, chatMidX);
-
-      console.debug(`[MEM44] speaker: ${speaker} [${method}] cls="${msg.el.className || ''}" text="${msg.raw.slice(0, 20)}..."`);
-
-      // 「開封済み」のみ削除
-      const text = msg.raw.replace(/開封済み/g, "").trim();
-
-      return {
-        speaker,
-        text,
-        timestamp: null,
-      };
-    }).filter((entry) => entry.text);
+    const last20 = all.slice(-20);
+    const last6 = all.slice(-6);
 
     // デバッグログ
-    log("抽出結果:", structured.length, "件");
-    const counts = structured.reduce((acc, m) => {
-      acc[m.speaker] = (acc[m.speaker] || 0) + 1;
-      return acc;
-    }, {});
-    console.log("[MEM44 DEBUG] speaker breakdown:", counts);
-    console.debug("[MEM44] scrapeConversationStructured sample (last 6):", structured.slice(-6));
+    const maleCount = all.filter((m) => m.speaker === "male").length;
+    const femaleCount = all.filter((m) => m.speaker === "female").length;
+    console.log("[MEM44] scrapeConversationStructured:", {
+      total: all.length,
+      male: maleCount,
+      female: femaleCount,
+    });
+    console.log(
+      "[MEM44] sample (last 6):",
+      last6.map((m, i) => ({ idx: i, speaker: m.speaker, text: m.text.slice(0, 40) }))
+    );
 
-    return structured;
+    return { all, last6, last20 };
   }
+
+  // DEBUG helper (keep as comment for manual console testing):
+  // [...document.querySelectorAll('div.mmsg_char, div.mmsg_member')]
+  //   .slice(-10)
+  //   .map((el, i) => ({
+  //     idx: i,
+  //     role: el.classList.contains('mmsg_char') ? 'female(char)' : 'male(member)',
+  //     text: (el.innerText || '').trim().slice(0, 50),
+  //   }));
 
   /** ===== 旧互換: テキスト形式で会話取得 ===== */
   function scrapeConversationRaw() {
-    const structured = scrapeConversationStructured();
-    return structured.map((entry) => {
+    const { all } = scrapeConversationStructured();
+    return all.map((entry) => {
       const who = entry.speaker === "male" ? "♂" : "♀";
       return `${who} ${entry.text}`;
     });
@@ -497,11 +439,11 @@ console.log("MEM44 Auto-Reply AI Assistant v2.3");
 
   async function getConversation20Structured() {
     for (let i = 0; i < RETRY_READ_CHAT; i++) {
-      const arr = scrapeConversationStructured();
-      if (arr.length) return arr.slice(-20);
+      const { last20 } = scrapeConversationStructured();
+      if (last20.length) return last20;
       await sleep(RETRY_READ_GAP);
     }
-    return scrapeConversationStructured().slice(-20);
+    return scrapeConversationStructured().last20;
   }
 
   async function getConversation20() {
@@ -1068,31 +1010,30 @@ console.log("MEM44 Auto-Reply AI Assistant v2.3");
   }
 
   async function buildWebhookPayload() {
-    // OLV29と同じ構造: getConversation20Structured() を直接使用
-    const structured20 = await getConversation20Structured();
-
-    const short6 = structured20.slice(-6);
+    // 新しい構造化会話取得（クラス名だけで男女判定）
+    const conv = scrapeConversationStructured();
 
     const profileText = getSideInfoText() || "";
 
-    // デバッグ用ログ（speaker 判定の確認用）
-    console.log("[MEM44 DEBUG] conversation_long20 sample:", structured20.slice(-3));
-    const speakerCounts = structured20.reduce((acc, m) => {
-      acc[m.speaker] = (acc[m.speaker] || 0) + 1;
-      return acc;
-    }, {});
-    console.log("[MEM44 DEBUG] speaker breakdown:", speakerCounts);
-    log("[mem44] conv6:", short6);
-    log("[mem44] conv20:", structured20);
-    log("[mem44] profileText:", profileText.slice(0, 100) + "...");
+    // デバッグ用ログ
+    console.log("[MEM44] buildWebhookPayload:", {
+      total: conv.all.length,
+      last6: conv.last6.length,
+      last20: conv.last20.length,
+    });
+    console.log("[MEM44] conversation sample:", conv.last6.map((m, i) => ({
+      idx: i,
+      speaker: m.speaker,
+      text: m.text.slice(0, 30),
+    })));
 
     return {
       site: getSiteId(),
       threadId: getThreadId(),
       tone: getToneSetting(),
       blueStage: getBlueStage(),
-      conversation: short6,
-      conversation_long20: structured20,
+      conversation: conv.last6,
+      conversation_long20: conv.last20,
       profileText,
     };
   }
@@ -1129,8 +1070,9 @@ console.log("MEM44 Auto-Reply AI Assistant v2.3");
   async function sendMemoUpdate() {
     setStatus("メモ更新中…", "#a855f7");
     try {
-      // OLV29と同じ構造: getConversation20Structured() を直接使用
-      const conversation_long20 = await getConversation20Structured();
+      // 新しい構造化会話取得
+      const conv = scrapeConversationStructured();
+      const conversation_long20 = conv.last20;
 
       // プロフィール
       const profileText = getSideInfoText() || "";
