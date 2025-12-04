@@ -5,7 +5,8 @@
   "main": "index.js",
   "type": "module",
   "scripts": {
-    "check:mem44": "ts-node scripts/check-mem44-sync.ts"
+    "check:mem44": "ts-node scripts/check-mem44-sync.ts",
+    "check:olv29": "ts-node scripts/check-olv29-sync.ts"
   },
   "keywords": [],
   "author": "coogee2033",
