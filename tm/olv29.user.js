@@ -448,41 +448,8 @@ console.log("OLV29 Auto-Reply AI Assistant v1.6");
   //     text: (el.innerText || '').trim().slice(0, 50),
   //   }));
 
-  /** ===== 旧互換: テキスト形式で会話取得 ===== */
-  function scrapeConversationRaw() {
-    const { all } = scrapeConversationStructured();
-    return all.map((entry) => {
-      const who = entry.speaker === "male" ? "♂" : "♀";
-      return `${who} ${entry.text}`;
-    });
-  }
-
-  async function getConversation20() {
-    for (let i = 0; i < RETRY_READ_CHAT; i++) {
-      const arr = scrapeConversationRaw();
-      if (arr.length) return arr.join("\n");
-      await sleep(RETRY_READ_GAP);
-    }
-    return scrapeConversationRaw().join("\n");
-  }
-
-  function mapLineToStructuredEntry(line) {
-    if (!line) return null;
-    const symbol = line[0] || "";
-    let speaker = "unknown";
-    if (symbol === "♂") speaker = "male";
-    else if (symbol === "♀") speaker = "female";
-    else if (/管理|system/i.test(symbol)) speaker = "system";
-
-    const text = line.replace(/^.[\s]*/, "").trim();
-    return text ? { speaker, text, timestamp: null } : null;
-  }
-
-  function buildStructuredConversation(lines) {
-    return lines
-      .map(mapLineToStructuredEntry)
-      .filter((entry) => entry && entry.text);
-  }
+  // 旧 scrapeConversationRaw / getConversation20 は削除済み
+  // 新ロジックでは scrapeConversationStructured() のみを使用
 
   function getSiteId() {
     const host = location.hostname || "";
@@ -538,11 +505,10 @@ console.log("OLV29 Auto-Reply AI Assistant v1.6");
   }
 
   function getLastUtteranceSync() {
-    const arr = scrapeConversationRaw();
-    const last = arr[arr.length - 1] || "";
-    const who = last.startsWith("♂") ? "M" : last.startsWith("♀") ? "F" : "";
-    const text = last.replace(/^.[\s]*/, "");
-    return { who, text, fp: hash(last) };
+    const { all } = scrapeConversationStructured();
+    const last = all[all.length - 1] || { speaker: "", text: "" };
+    const who = last.speaker === "male" ? "M" : last.speaker === "female" ? "F" : "";
+    return { who, text: last.text, fp: hash(last.text) };
   }
 
   /** ===== ふたりメモ alert パッチ ===== */
@@ -1016,25 +982,27 @@ console.log("OLV29 Auto-Reply AI Assistant v1.6");
 
     const profileText = getSideInfoText() || "";
 
+    // speaker -> role に変換して payload 用配列を作成
+    const conv6 = conv.last6.map(m => ({ role: m.speaker, text: m.text }));
+    const conv20 = conv.last20.map(m => ({ role: m.speaker, text: m.text }));
+
     // デバッグ用ログ
-    console.log("[OLV29] buildWebhookPayload:", {
+    console.debug("[OLV29] scrapeConversationStructured:", {
       total: conv.all.length,
-      last6: conv.last6.length,
-      last20: conv.last20.length,
+      male: conv.all.filter(m => m.speaker === "male").length,
+      female: conv.all.filter(m => m.speaker === "female").length,
     });
-    console.log("[OLV29] conversation sample:", conv.last6.map((m, i) => ({
-      idx: i,
-      speaker: m.speaker,
-      text: m.text.slice(0, 30),
-    })));
+    console.debug("[OLV29] conversation sample (last 6):",
+      conv6.map((m, idx) => ({ idx, role: m.role, text: m.text.slice(0, 50) }))
+    );
 
     return {
       site: getSiteId(),
       threadId: getThreadId(),
       tone: getToneSetting(),
       blueStage: getBlueStage(),
-      conversation: conv.last6,
-      conversation_long20: conv.last20,
+      conversation: conv6,
+      conversation_long20: conv20,
       profileText,
     };
   }
@@ -1073,7 +1041,7 @@ console.log("OLV29 Auto-Reply AI Assistant v1.6");
     try {
       // 新しい構造化会話取得
       const conv = scrapeConversationStructured();
-      const conversation_long20 = conv.last20;
+      const conversation_long20 = conv.last20.map(m => ({ role: m.speaker, text: m.text }));
 
       // プロフィール
       const profileText = getSideInfoText() || "";
