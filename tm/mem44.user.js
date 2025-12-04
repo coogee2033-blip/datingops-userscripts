@@ -281,8 +281,8 @@ console.log("MEM44 Auto-Reply AI Assistant v2.3");
     );
   }
 
-  /** ===== 会話抽出（mem44専用） ===== */
-  function scrapeConversationRaw() {
+  /** ===== 会話抽出（mem44専用: OLV29と同一構造） ===== */
+  function scrapeConversationStructured() {
     const root = getChatRoot();
 
     // 左右サイドカラムを除外対象として取得
@@ -305,7 +305,8 @@ console.log("MEM44 Auto-Reply AI Assistant v2.3");
     const chatMidX = (chatRect.left + chatRect.right) / 2;
     log("chatMidX:", chatMidX, "chatRect:", chatRect.left, "-", chatRect.right);
 
-    const lines = [];
+    // 各メッセージ要素から情報を取得
+    const rawMessages = [];
     for (const el of nodes) {
       // サイドカラムに属する要素は会話から除外
       if (sideBlocks.some((b) => b.contains(el))) {
@@ -328,42 +329,6 @@ console.log("MEM44 Auto-Reply AI Assistant v2.3");
         continue;
       }
 
-      const clsOriginal = el.className || "";
-      const rect = el.getBoundingClientRect?.() || { left: 0, width: 0 };
-      const centerX = rect.left + rect.width / 2;
-      const isRightSide = centerX > chatMidX;
-
-      let isMale = null;
-      let detectionMethod = "";
-
-      // mem44 用のクラスベース判定（最優先）
-      if (el.matches("div.mb_M, .mmmsg_member")) {
-        isMale = true;
-        detectionMethod = "mem44 class (mb_M/mmmsg_member)";
-      } else if (el.matches("div.mb_L, .mmmsg_char")) {
-        isMale = false;
-        detectionMethod = "mem44 class (mb_L/mmmsg_char)";
-      }
-
-      // まだ決まっていなければ、従来のクラス判定
-      if (isMale === null) {
-        if (/\bmb_m\b/i.test(clsOriginal) || /\bmmmsg_member\b/i.test(clsOriginal)) {
-          isMale = true;
-          detectionMethod = "class regex (mb_M/mmmsg_member)";
-        } else if (/\bmb_l\b/i.test(clsOriginal) || /\bmmmsg_char\b/i.test(clsOriginal)) {
-          isMale = false;
-          detectionMethod = "class regex (mb_L/mmmsg_char)";
-        }
-      }
-
-      // それでも決まらない場合だけ座標 fallback を使う
-      if (isMale === null) {
-        isMale = isRightSide;
-        detectionMethod = `fallback position(centerX=${Math.round(centerX)}, midX=${Math.round(chatMidX)})`;
-      }
-
-      log(`判定: ${isMale ? "♂男" : "♀女"} [${detectionMethod}] cls="${clsOriginal}" text="${raw.slice(0, 20)}..."`);
-
       // 管理テキスト類は conversation から除外する
       const isAdminMeta =
         /(管理者メモ|自己紹介文|使用絵文字・顔文字|残り\s*\d+\s*pt|入金|本登録|最終アクセス|累計送信数|返信文グループ|自由メモ|ジャンル|エロ・セフレ募集系|ポイント残高|ふたりメモ|キャラ情報|ユーザー情報)/.test(raw);
@@ -372,18 +337,125 @@ console.log("MEM44 Auto-Reply AI Assistant v2.3");
         continue;
       }
 
-      // 「開封済み」のみ削除
-      const text = raw.replace(/開封済み/g, "").trim();
-      if (!text) continue;
+      const rect = el.getBoundingClientRect?.() || { left: 0, width: 0, top: 0, height: 0 };
+      const centerX = rect.left + rect.width / 2;
+      const top = rect.top;
 
-      const who = isMale ? "♂" : "♀";
-      lines.push(`${who} ${text}`);
+      // 日付っぽい "12/03 15:06" を抜き出して epoch に
+      let ts = null;
+      const m = raw.match(/(\d{1,2})\/(\d{1,2})\s+(\d{1,2}):(\d{2})/);
+      if (m) {
+        const year = new Date().getFullYear();
+        const month = Number(m[1]) - 1;
+        const day = Number(m[2]);
+        const hour = Number(m[3]);
+        const minute = Number(m[4]);
+        ts = new Date(year, month, day, hour, minute).getTime();
+      }
+
+      rawMessages.push({ el, raw, rect, centerX, top, ts });
     }
 
-    log("抽出結果:", lines.length, "件", lines.map(l => l.slice(0, 30)));
-    console.log("[DatingOps] scrapeConversationRaw sample:", lines.slice(-6));
+    log("有効メッセージ数:", rawMessages.length);
 
-    return lines.slice(-20);
+    if (rawMessages.length === 0) {
+      console.warn("[MEM44] scrapeConversationStructured: no messages found");
+      return [];
+    }
+
+    // 画面上の縦位置 top でソート
+    rawMessages.sort((a, b) => a.top - b.top);
+
+    // 時系列を古い→新しいに揃える（上が古いか新しいかを自動判定）
+    let chronological = rawMessages.slice();
+    const withTs = chronological.filter((m) => m.ts !== null);
+    if (withTs.length >= 2) {
+      const firstTs = withTs[0].ts;
+      const lastTs = withTs[withTs.length - 1].ts;
+      if (firstTs > lastTs) {
+        // 画面上部の方が新しい場合は反転
+        chronological.reverse();
+        console.debug("[MEM44] chronological: reversed by timestamp (top is newer)");
+      } else {
+        console.debug("[MEM44] chronological: top is oldest");
+      }
+    } else {
+      console.debug("[MEM44] chronological: not enough timestamps, keep visual order (top=oldest)");
+    }
+
+    // 構造化配列を作成
+    const structured = chronological.map((msg) => {
+      const el = msg.el;
+      const clsOriginal = el.className || "";
+      const isRightSide = msg.centerX > chatMidX;
+
+      let speaker = null;
+      let detectionMethod = "";
+
+      // mem44 用のクラスベース判定（最優先）
+      if (el.matches("div.mb_M, .mmmsg_member")) {
+        speaker = "male";
+        detectionMethod = "mem44 class (mb_M/mmmsg_member)";
+      } else if (el.matches("div.mb_L, .mmmsg_char")) {
+        speaker = "female";
+        detectionMethod = "mem44 class (mb_L/mmmsg_char)";
+      }
+
+      // まだ決まっていなければ、従来のクラス判定
+      if (speaker === null) {
+        if (/\bmb_m\b/i.test(clsOriginal) || /\bmmmsg_member\b/i.test(clsOriginal)) {
+          speaker = "male";
+          detectionMethod = "class regex (mb_M/mmmsg_member)";
+        } else if (/\bmb_l\b/i.test(clsOriginal) || /\bmmmsg_char\b/i.test(clsOriginal)) {
+          speaker = "female";
+          detectionMethod = "class regex (mb_L/mmmsg_char)";
+        }
+      }
+
+      // それでも決まらない場合だけ座標 fallback を使う
+      if (speaker === null) {
+        speaker = isRightSide ? "male" : "female";
+        detectionMethod = `fallback position(centerX=${Math.round(msg.centerX)}, midX=${Math.round(chatMidX)})`;
+      }
+
+      console.debug(`[MEM44] speaker: ${speaker} [${detectionMethod}] cls="${clsOriginal}" text="${msg.raw.slice(0, 20)}..."`);
+
+      // 「開封済み」のみ削除
+      const text = msg.raw.replace(/開封済み/g, "").trim();
+
+      return {
+        speaker,
+        text,
+        timestamp: null,
+      };
+    }).filter((entry) => entry.text);
+
+    // デバッグログ
+    log("抽出結果:", structured.length, "件");
+    const maleCount = structured.filter((m) => m.speaker === "male").length;
+    const femaleCount = structured.filter((m) => m.speaker === "female").length;
+    console.debug("[MEM44] speaker breakdown:", { male: maleCount, female: femaleCount });
+    console.debug("[MEM44] scrapeConversationStructured sample (last 6):", structured.slice(-6));
+
+    return structured;
+  }
+
+  /** ===== 旧互換: テキスト形式で会話取得 ===== */
+  function scrapeConversationRaw() {
+    const structured = scrapeConversationStructured();
+    return structured.map((entry) => {
+      const who = entry.speaker === "male" ? "♂" : "♀";
+      return `${who} ${entry.text}`;
+    });
+  }
+
+  async function getConversation20Structured() {
+    for (let i = 0; i < RETRY_READ_CHAT; i++) {
+      const arr = scrapeConversationStructured();
+      if (arr.length) return arr.slice(-20);
+      await sleep(RETRY_READ_GAP);
+    }
+    return scrapeConversationStructured().slice(-20);
   }
 
   async function getConversation20() {
@@ -950,13 +1022,15 @@ console.log("MEM44 Auto-Reply AI Assistant v2.3");
   }
 
   async function buildWebhookPayload() {
-    const convoLines = (await getConversation20()).split("\n").filter(Boolean);
-    const structured20 = buildStructuredConversation(convoLines);
+    // OLV29と同じ構造: getConversation20Structured() を直接使用
+    const structured20 = await getConversation20Structured();
 
     const short6 = structured20.slice(-6);
 
     const profileText = getSideInfoText() || "";
 
+    // デバッグ用ログ（speaker 判定の確認用）
+    console.log("[MEM44 DEBUG] conversation_long20 sample:", structured20.slice(-3));
     log("[mem44] conv6:", short6);
     log("[mem44] conv20:", structured20);
     log("[mem44] profileText:", profileText.slice(0, 100) + "...");
@@ -1004,9 +1078,8 @@ console.log("MEM44 Auto-Reply AI Assistant v2.3");
   async function sendMemoUpdate() {
     setStatus("メモ更新中…", "#a855f7");
     try {
-      // 会話（構造化）を取得して、最大20件まで渡す
-      const convoLines = (await getConversation20()).split("\n").filter(Boolean);
-      const conversation_long20 = buildStructuredConversation(convoLines);
+      // OLV29と同じ構造: getConversation20Structured() を直接使用
+      const conversation_long20 = await getConversation20Structured();
 
       // プロフィール
       const profileText = getSideInfoText() || "";
