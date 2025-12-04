@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         MEM44 Auto-Reply AI Assistant
 // @namespace    tamper-datingops
-// @version      1.1
+// @version      2.0
 // @description  mem44 個別送信用のAIパネル（元のDatingOps Panelと同等機能）
 // @author       coogee2033
 // @match        https://mem44.com/*
@@ -22,7 +22,7 @@
   OLV 用は別ファイル（tm/olv29.user.js）で管理。
 */
 
-console.log("DatingOps Panel (mem44) v1.0");
+console.log("DatingOps Panel (mem44) v2.0");
 
 (() => {
   "use strict";
@@ -46,6 +46,10 @@ console.log("DatingOps Panel (mem44) v1.0");
     "http://localhost:5678/webhook/chat-v2",
     "http://127.0.0.1:5678/webhook/chat-v2",
   ];
+  // メモ更新専用 Webhook （ホストは WEBHOOKS を流用、パスだけ差し替え）
+  const MEMO_WEBHOOKS = WEBHOOKS.map((u) =>
+    u.replace(/\/chat-v2$/, "/memo-update")
+  );
   const PANEL_ID = "n8n-ai-panel";
   const AUTO_SEND_ON_LOAD = true;
   const AUTO_SEND_ON_NEW_MALE = false;
@@ -113,7 +117,10 @@ console.log("DatingOps Panel (mem44) v1.0");
         <div style="margin-top:4px; padding-top:6px; border-top:1px solid #333; display:flex; flex-direction:column; gap:4px;">
           <label style="font-size:11px;color:#aaa;">メモ候補（男性の事実メモ）</label>
           <textarea id="n8n_memo_candidate" rows="3" readonly style="width:100%;resize:vertical;border-radius:8px;border:1px solid #444;background:#181818;color:#9ef;padding:6px;font-size:11px;"></textarea>
-          <button id="n8n_copy_memo" style="align-self:flex-end;background:#334155;border:1px solid #475569;color:#e5e7eb;border-radius:8px;padding:4px 8px;font-size:11px;cursor:pointer;">メモにコピー</button>
+          <div style="display:flex;justify-content:flex-end;gap:6px;">
+            <button id="n8n_copy_memo" style="background:#334155;border:1px solid #475569;color:#e5e7eb;border-radius:8px;padding:4px 8px;font-size:11px;cursor:pointer;">メモにコピー</button>
+            <button id="n8n_memo_update" style="background:#7c3aed;border:1px solid #a855f7;color:#f9fafb;border-radius:8px;padding:4px 8px;font-size:11px;cursor:pointer;">メモ更新</button>
+          </div>
         </div>
       </div>`;
     document.body.appendChild(wrap);
@@ -193,6 +200,11 @@ console.log("DatingOps Panel (mem44) v1.0");
       } else {
         setStatus("メモ欄見つからず", "#f59e0b");
       }
+    });
+
+    // メモ更新ボタン
+    qs("#n8n_memo_update", wrap)?.addEventListener("click", () => {
+      sendMemoUpdate();
     });
   }
 
@@ -886,6 +898,48 @@ console.log("DatingOps Panel (mem44) v1.0");
     return p;
   }
 
+  // メモ更新用：/memo-update に POST（Featherless memo-flow）
+  function postMemoJSONWithFallback(payload) {
+    const data = JSON.stringify(payload);
+    const tryOne = (url) =>
+      new Promise((resolve, reject) => {
+        GM_xmlhttpRequest({
+          method: "POST",
+          url,
+          data,
+          headers: { "Content-Type": "application/json" },
+          timeout: 20000,
+          onload: (res) => {
+            console.log("[DatingOps] memo n8n response:", url, res.status, res.responseText);
+            if (res.status >= 200 && res.status < 300) {
+              try {
+                resolve(JSON.parse(res.responseText || "{}"));
+              } catch {
+                resolve({ ok: true, raw: res.responseText });
+              }
+            } else {
+              reject(
+                new Error("HTTP " + res.status + " " + (res.responseText || ""))
+              );
+            }
+          },
+          onerror: (err) => {
+            console.error("[DatingOps] memo n8n request error:", url, err);
+            reject(new Error("GM_xhr onerror"));
+          },
+          ontimeout: () => {
+            console.error("[DatingOps] memo n8n request timeout:", url);
+            reject(new Error("GM_xhr timeout"));
+          },
+        });
+      });
+    let p = Promise.reject(new Error("init"));
+    MEMO_WEBHOOKS.forEach((u) => {
+      p = p.catch(() => tryOne(u));
+    });
+    return p;
+  }
+
   async function buildWebhookPayload() {
     const convoLines = (await getConversation20()).split("\n").filter(Boolean);
     const structured20 = buildStructuredConversation(convoLines);
@@ -934,6 +988,57 @@ console.log("DatingOps Panel (mem44) v1.0");
       setStatus("送信失敗", "#f87171");
       console.warn("[DatingOps] send error:", e);
       alert("n8n送信エラー：" + (e?.message || e));
+    }
+  }
+
+  // ===== メモ更新ボタン処理（/memo-updateを叩く） =====
+  async function sendMemoUpdate() {
+    setStatus("メモ更新中…", "#a855f7");
+    try {
+      // 会話（構造化）を取得して、最大20件まで渡す
+      const convoLines = (await getConversation20()).split("\n").filter(Boolean);
+      const conversation_long20 = buildStructuredConversation(convoLines);
+
+      // プロフィール
+      const profileText = getSideInfoText() || "";
+
+      // 既存ふたりメモ
+      const memoTa = getPairMemoTextarea();
+      const existingPairMemo = memoTa ? memoTa.value || "" : "";
+
+      const payload = {
+        profileText,
+        conversation_long20,
+        existingPairMemo,
+      };
+
+      console.log("[DatingOps] sending memo payload to n8n:", payload);
+      const res = await postMemoJSONWithFallback(payload);
+      const memoText = (res && res.memo_candidate) ? String(res.memo_candidate).trim() : "";
+
+      if (memoText) {
+        if (memoTa) {
+          // ふたりメモ欄に直接反映
+          memoTa.value = memoText;
+          ["input", "change", "keyup"].forEach((ev) =>
+            memoTa.dispatchEvent(new Event(ev, { bubbles: true }))
+          );
+          // 自動保存フラグと連携
+          pairMemoDirty = true;
+          savePairMemo("memo-update");
+          setStatus("メモ更新OK", "#4ade80");
+        } else {
+          // メモ欄が取れない場合は、候補欄にだけ反映
+          updateMemoCandidateBox(memoText);
+          setStatus("メモ候補更新OK", "#4ade80");
+        }
+      } else {
+        setStatus("メモ候補空", "#f59e0b");
+      }
+    } catch (e) {
+      console.warn("[DatingOps] memo update error:", e);
+      setStatus("メモ更新失敗", "#f97316");
+      alert("メモ更新エラー：" + (e?.message || e));
     }
   }
 
