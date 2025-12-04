@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         MEM44 Auto-Reply AI Assistant
 // @namespace    tamper-datingops
-// @version      2.1
+// @version      2.2
 // @description  mem44 個別送信用のAIパネル（元のDatingOps Panelと同等機能）
 // @author       coogee2033
 // @match        https://mem44.com/*
@@ -22,7 +22,7 @@
   OLV 用は別ファイル（tm/olv29.user.js）で管理。
 */
 
-console.log("MEM44 Auto-Reply AI Assistant v2.1");
+console.log("MEM44 Auto-Reply AI Assistant v2.2");
 
 (() => {
   "use strict";
@@ -99,7 +99,7 @@ console.log("MEM44 Auto-Reply AI Assistant v2.1");
     `;
     wrap.innerHTML = `
       <div id="n8n_drag_handle" style="cursor:move;padding:10px 12px; display:flex; align-items:center; gap:8px; border-bottom:1px solid #333;">
-        <div style="font-weight:700;">n8n 自動返信</div>
+        <div style="font-weight:700;">MEM44 自動返信</div>
         <div id="n8n_status" style="margin-left:auto;font-size:12px;color:#9aa;">起動</div>
       </div>
       <div style="padding:10px 12px; display:flex; flex-direction:column; gap:8px;">
