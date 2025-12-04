@@ -384,9 +384,8 @@ console.log("OLV29 Auto-Reply AI Assistant v1.6");
       qs(".right_col") || qs(".user_info") || qs("table.staff_cs"),
     ].filter(Boolean);
 
-    // OLV専用: div.mb_M を取得（男女両方を拾う）
-    // 追加セレクタ: .msg, .talk, td なども試す
-    const selectors = "div.mb_M, .inbox .msg, .inbox .talk, table.inbox_chat td";
+    // OLV専用: mmsg_char / mmsg_member クラスで男女バルーンを取得
+    const selectors = "div.mmsg_char, div.mmsg_member";
     let messageEls = qsa(selectors, root);
     messageEls = messageEls.filter((el) => (el.innerText || "").trim());
 
@@ -474,17 +473,35 @@ console.log("OLV29 Auto-Reply AI Assistant v1.6");
 
     // structured 配列を作成
     const structured = chronological.map((msg) => {
-      const { speaker } = detectSpeakerForOlvMessage(msg, thresholdX, viewportWidth);
+      const el = msg.el;
+      let speaker = "female"; // デフォルト
+      let detectionMethod = "";
+
+      // ① クラス名による最優先判定（mmsg_char / mmsg_member）
+      if (el.classList.contains("mmsg_char")) {
+        speaker = "female";
+        detectionMethod = "class mmsg_char";
+      } else if (el.classList.contains("mmsg_member")) {
+        speaker = "male";
+        detectionMethod = "class mmsg_member";
+      } else {
+        // ② それでも決められない場合は、既存の fallback ロジックを使う
+        const detected = detectSpeakerForOlvMessage(msg, thresholdX, viewportWidth);
+        speaker = detected.speaker || "female";
+        detectionMethod = detected.method || "fallback";
+      }
+
+      console.debug(`[OLV29] speaker: ${speaker} [${detectionMethod}] cls="${el.className || ''}" text="${msg.rawText.slice(0, 20)}..."`);
 
       // ノイズ削り：開封済み などは消す
       const text = msg.rawText.replace(/開封済み/g, "").trim();
 
-      return {
+      return text ? {
         speaker, // "male" or "female"
         text,
         timestamp: null,
-      };
-    }).filter((entry) => entry.text);
+      } : null;
+    }).filter(Boolean);
 
     // デバッグログ
     log("抽出結果:", structured.length, "件");

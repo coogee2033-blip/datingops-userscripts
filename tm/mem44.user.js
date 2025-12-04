@@ -285,19 +285,28 @@ console.log("MEM44 Auto-Reply AI Assistant v2.3");
   function detectSpeaker(el, chatMidX) {
     if (!el) return { speaker: "male", method: "no element" };
 
+    // 1. クラス名による最優先判定（mmsg_char / mmsg_member）
+    //    ※ classList.contains を使って正確にマッチ
+    if (el.classList && el.classList.contains("mmsg_char")) {
+      return { speaker: "female", method: "class mmsg_char" };
+    }
+    if (el.classList && el.classList.contains("mmsg_member")) {
+      return { speaker: "male", method: "class mmsg_member" };
+    }
+
+    // 2. フォールバック: className 文字列での判定（旧形式互換）
     const classNames = (el.className || "") + " " +
       Array.from(el.classList || []).join(" ");
     const classLower = classNames.toLowerCase();
 
-    // 1. MEM44 / OLV 共通クラス判定（最優先）
-    if (classLower.includes("mmmsg_char") || classLower.includes("mb_l")) {
-      return { speaker: "female", method: "class mmmsg_char/mb_L" };
+    if (classLower.includes("mmsg_char") || classLower.includes("mb_l")) {
+      return { speaker: "female", method: "class mmsg_char/mb_L (string)" };
     }
-    if (classLower.includes("mmmsg_member") || classLower.includes("mb_m")) {
-      return { speaker: "male", method: "class mmmsg_member/mb_M" };
+    if (classLower.includes("mmsg_member") || classLower.includes("mb_m")) {
+      return { speaker: "male", method: "class mmsg_member/mb_M (string)" };
     }
 
-    // 2. MEM44 固有のクラス（mbR / mbL など）
+    // 3. MEM44 固有のクラス（mbR / mbL など）
     if (classLower.includes("mbr") || classLower.includes("msg_r") || classLower.includes("right")) {
       return { speaker: "male", method: "class mbR/msg_r/right" };
     }
@@ -305,7 +314,7 @@ console.log("MEM44 Auto-Reply AI Assistant v2.3");
       return { speaker: "female", method: "class mbL/msg_l/left" };
     }
 
-    // 3. 親要素の td の align / text-align で左右判定
+    // 4. 親要素の td の align / text-align で左右判定
     const td = el.closest("td");
     if (td) {
       const align = (td.getAttribute("align") || "").toLowerCase();
@@ -318,11 +327,10 @@ console.log("MEM44 Auto-Reply AI Assistant v2.3");
       }
     }
 
-    // 4. 親要素の tr/table の背景色で判定（MEM44特有）
+    // 5. 親要素の tr/table の背景色で判定（MEM44特有）
     const tr = el.closest("tr");
     if (tr) {
       const bgColor = (tr.getAttribute("bgcolor") || tr.style?.backgroundColor || "").toLowerCase();
-      // 客側（男性）は右側で薄い色、キャラ側（女性）は左側で別色のことが多い
       if (bgColor.includes("e6f") || bgColor.includes("fce") || bgColor.includes("pink")) {
         return { speaker: "female", method: "tr bgcolor pink/fce" };
       }
@@ -331,7 +339,7 @@ console.log("MEM44 Auto-Reply AI Assistant v2.3");
       }
     }
 
-    // 5. 座標 fallback（chatMidX より右なら男性）
+    // 6. 座標 fallback（chatMidX より右なら男性）
     if (chatMidX !== undefined) {
       const rect = el.getBoundingClientRect?.() || { left: 0, width: 0 };
       const centerX = rect.left + rect.width / 2;
@@ -342,7 +350,7 @@ console.log("MEM44 Auto-Reply AI Assistant v2.3");
       }
     }
 
-    // 6. 最終 fallback
+    // 7. 最終 fallback
     return { speaker: "male", method: "default fallback" };
   }
 
@@ -356,8 +364,9 @@ console.log("MEM44 Auto-Reply AI Assistant v2.3");
       qs(".right_col") || qs(".ユーザー情報") || qs(".user_info"),
     ].filter(Boolean);
 
-    // mem44専用: 吹き出しクラスのみを取得対象に
-    let nodes = qsa(".mmmsg_char, .mmmsg_member, .mb_M, .mb_L", root);
+    // mem44専用: mmsg_char / mmsg_member クラスで男女バルーンを取得
+    const selectors = "div.mmsg_char, div.mmsg_member";
+    let nodes = qsa(selectors, root);
     nodes = nodes.filter((el) => (el.innerText || "").trim());
 
     log("会話ノード数:", nodes.length, "root:", root?.className || root?.id || "body");
