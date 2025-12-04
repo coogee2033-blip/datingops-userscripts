@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         MEM44 Auto-Reply AI Assistant
 // @namespace    tamper-datingops
-// @version      2.2
+// @version      2.3
 // @description  mem44 個別送信用のAIパネル（元のDatingOps Panelと同等機能）
 // @author       coogee2033
 // @match        https://mem44.com/*
@@ -22,7 +22,7 @@
   OLV 用は別ファイル（tm/olv29.user.js）で管理。
 */
 
-console.log("MEM44 Auto-Reply AI Assistant v2.2");
+console.log("MEM44 Auto-Reply AI Assistant v2.3");
 
 (() => {
   "use strict";
@@ -93,14 +93,15 @@ console.log("MEM44 Auto-Reply AI Assistant v2.2");
     const wrap = document.createElement("div");
     wrap.id = PANEL_ID;
     wrap.style.cssText = `
-      position:fixed; right:16px; bottom:16px; z-index:999999;
+      position:fixed; left:16px; bottom:16px; z-index:999999;
       width:320px; background:#111; color:#eee; border-radius:12px;
       box-shadow:0 12px 30px rgba(0,0,0,.35); font-family:system-ui,-apple-system,Segoe UI,sans-serif;
     `;
     wrap.innerHTML = `
       <div id="n8n_drag_handle" style="cursor:move;padding:10px 12px; display:flex; align-items:center; gap:8px; border-bottom:1px solid #333;">
         <div style="font-weight:700;">MEM44 自動返信</div>
-        <div id="n8n_status" style="margin-left:auto;font-size:12px;color:#9aa;">起動</div>
+        <button id="n8n_close_btn" style="margin-left:auto; background:transparent; border:none; color:#888; font-size:14px; cursor:pointer; padding:0 4px;">✕</button>
+        <div id="n8n_status" style="font-size:12px; color:#9aa; margin-left:4px;">起動</div>
       </div>
       <div style="padding:10px 12px; display:flex; flex-direction:column; gap:8px;">
         <label style="font-size:12px;color:#aaa;">一言プロンプト（任意）</label>
@@ -160,6 +161,14 @@ console.log("MEM44 Auto-Reply AI Assistant v2.2");
       box.style.position = "fixed";
       handle.addEventListener("mousedown", onDown);
     })(wrap, qs("#n8n_drag_handle", wrap));
+
+    // ✕ ボタンでパネルを閉じる
+    const closeBtn = qs("#n8n_close_btn", wrap);
+    if (closeBtn) {
+      closeBtn.addEventListener("click", () => {
+        wrap.style.display = "none";
+      });
+    }
 
     qs("#n8n_temp", wrap).addEventListener("input", () => {
       qs("#n8n_temp_val", wrap).textContent = (+qs("#n8n_temp", wrap)

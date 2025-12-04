@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         OLV29 Auto-Reply AI Assistant
 // @namespace    tamper-datingops
-// @version      1.5
+// @version      1.6
 // @description  OLV専用AIパネル（mem44互換、DOMだけOLV対応）
 // @author       coogee2033
 // @match        https://olv29.com/*
@@ -34,7 +34,7 @@
     - div.inbox
 */
 
-console.log("OLV29 Auto-Reply AI Assistant v1.5");
+console.log("OLV29 Auto-Reply AI Assistant v1.6");
 
 (() => {
   "use strict";
@@ -105,14 +105,15 @@ console.log("OLV29 Auto-Reply AI Assistant v1.5");
     const wrap = document.createElement("div");
     wrap.id = PANEL_ID;
     wrap.style.cssText = `
-      position:fixed; right:16px; bottom:16px; z-index:999999;
+      position:fixed; left:16px; bottom:16px; z-index:999999;
       width:320px; background:#111; color:#eee; border-radius:12px;
       box-shadow:0 12px 30px rgba(0,0,0,.35); font-family:system-ui,-apple-system,Segoe UI,sans-serif;
     `;
     wrap.innerHTML = `
       <div id="olv29_drag_handle" style="cursor:move;padding:10px 12px; display:flex; align-items:center; gap:8px; border-bottom:1px solid #333;">
         <div style="font-weight:700;">OLV29 自動返信</div>
-        <div id="olv29_status" style="margin-left:auto;font-size:12px;color:#9aa;">起動</div>
+        <button id="olv29_close_btn" style="margin-left:auto; background:transparent; border:none; color:#888; font-size:14px; cursor:pointer; padding:0 4px;">✕</button>
+        <div id="olv29_status" style="font-size:12px; color:#9aa; margin-left:4px;">起動</div>
       </div>
       <div style="padding:10px 12px; display:flex; flex-direction:column; gap:8px;">
         <label style="font-size:12px;color:#aaa;">一言プロンプト（任意）</label>
@@ -172,6 +173,14 @@ console.log("OLV29 Auto-Reply AI Assistant v1.5");
       box.style.position = "fixed";
       handle.addEventListener("mousedown", onDown);
     })(wrap, qs("#olv29_drag_handle", wrap));
+
+    // ✕ ボタンでパネルを閉じる
+    const closeBtn = qs("#olv29_close_btn", wrap);
+    if (closeBtn) {
+      closeBtn.addEventListener("click", () => {
+        wrap.style.display = "none";
+      });
+    }
 
     qs("#olv29_temp", wrap).addEventListener("input", () => {
       qs("#olv29_temp_val", wrap).textContent = (+qs("#olv29_temp", wrap)
