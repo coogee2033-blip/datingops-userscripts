@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         MEM44 Auto-Reply AI Assistant
 // @namespace    tamper-datingops
-// @version      2.4
+// @version      2.5
 // @description  mem44 個別送信用のAIパネル（元のDatingOps Panelと同等機能）
 // @author       coogee2033
 // @match        https://mem44.com/*
@@ -22,7 +22,7 @@
   OLV 用は別ファイル（tm/olv29.user.js）で管理。
 */
 
-console.log("MEM44 Auto-Reply AI Assistant v2.3");
+console.log("MEM44 Auto-Reply AI Assistant v2.5");
 
 (() => {
   "use strict";
@@ -406,7 +406,7 @@ console.log("MEM44 Auto-Reply AI Assistant v2.3");
     // デバッグログ
     const maleCount = all.filter((m) => m.speaker === "male").length;
     const femaleCount = all.filter((m) => m.speaker === "female").length;
-    console.log("[MEM44 v2.4] scrapeConversationStructured:", {
+    console.log("[MEM44 v2.5] scrapeConversationStructured:", {
       total: all.length,
       male: maleCount,
       female: femaleCount,
@@ -427,6 +427,57 @@ console.log("MEM44 Auto-Reply AI Assistant v2.3");
   //     role: el.classList.contains('mmsg_char') ? 'female(char)' : 'male(member)',
   //     text: (el.innerText || '').trim().slice(0, 50),
   //   }));
+
+  /**
+   * ===== 青ログステージ算出 =====
+   * 直近 male より後に female が連続何通送っているかをカウント
+   * - 0 = 未返信（直近 male 以降に female なし）
+   * - 1 = 青1（female 1通）
+   * - 2 = 青2（female 2通）
+   * - 3 = 青3（female 3通）
+   * - 4 = 青4（female 4通以上）
+   */
+  function computeBlueStageFromEntries(entries) {
+    if (!entries || !entries.length) return 0;
+
+    const len = entries.length;
+
+    // 末尾から直近 male を探す
+    let lastMaleIndex = -1;
+    for (let i = len - 1; i >= 0; i--) {
+      const role = entries[i]?.role || entries[i]?.speaker;
+      if (role === "male") {
+        lastMaleIndex = i;
+        break;
+      }
+    }
+
+    // 直近 male が見つからない場合 → 全て female 連投とみなし、青1を返す
+    if (lastMaleIndex === -1) {
+      return 1;
+    }
+
+    // 直近 male より後ろの female 連続数をカウント
+    let consecutiveFemale = 0;
+    for (let i = lastMaleIndex + 1; i < len; i++) {
+      const role = entries[i]?.role || entries[i]?.speaker;
+      if (role === "female") {
+        consecutiveFemale++;
+      } else if (role === "male") {
+        // 再度 male が来たらカウント終了
+        break;
+      } else {
+        // unknown 等は連続性を切る扱いで break
+        break;
+      }
+    }
+
+    if (consecutiveFemale <= 0) return 0; // 未返信
+    if (consecutiveFemale === 1) return 1;
+    if (consecutiveFemale === 2) return 2;
+    if (consecutiveFemale === 3) return 3;
+    return 4; // 4通以上は青4固定
+  }
 
   // 旧 scrapeConversationRaw / getConversation20 は削除済み
   // 新ロジックでは scrapeConversationStructured() のみを使用
@@ -976,13 +1027,18 @@ console.log("MEM44 Auto-Reply AI Assistant v2.3");
     const conv6 = conv.last6.map(m => ({ role: m.speaker, text: m.text }));
     const conv20 = conv.last20.map(m => ({ role: m.speaker, text: m.text }));
 
+    // 青ログステージを会話から自動算出
+    const blueStage = computeBlueStageFromEntries(conv20);
+
     // デバッグ用ログ
-    console.debug("[MEM44 v2.4] scrapeConversationStructured:", {
-      total: conv.all.length,
+    console.log("[MEM44 v2.5] buildWebhookPayload:", {
+      blueStage,
+      conv6Count: conv6.length,
+      conv20Count: conv20.length,
       male: conv.all.filter(m => m.speaker === "male").length,
       female: conv.all.filter(m => m.speaker === "female").length,
     });
-    console.debug("[MEM44 v2.4] conversation sample (last 6):",
+    console.debug("[MEM44 v2.5] conversation sample (last 6):",
       conv6.map((m, idx) => ({ idx, role: m.role, text: m.text.slice(0, 50) }))
     );
 
@@ -990,7 +1046,7 @@ console.log("MEM44 Auto-Reply AI Assistant v2.3");
       site: getSiteId(),
       threadId: getThreadId(),
       tone: getToneSetting(),
-      blueStage: getBlueStage(),
+      blueStage,
       conversation: conv6,
       conversation_long20: conv20,
       profileText,
@@ -1001,7 +1057,7 @@ console.log("MEM44 Auto-Reply AI Assistant v2.3");
     setStatus("送信中…", "#ffa94d");
     try {
       const payload = await buildWebhookPayload();
-      console.log("[MEM44 v2.4] sending payload to n8n:", payload);
+      console.log("[MEM44 v2.5] sending payload to n8n:", payload);
       const res = await postJSONWithFallback(payload);
       setStatus("ok (200)", "#4ade80");
       const reply =
@@ -1089,7 +1145,7 @@ console.log("MEM44 Auto-Reply AI Assistant v2.3");
     (async () => {
       try {
         const payload = await buildWebhookPayload();
-        console.log("[MEM44 v2.4] sending payload to n8n (auto-on-load):", payload);
+        console.log("[MEM44 v2.5] sending payload to n8n (auto-on-load):", payload);
         const res = await postJSONWithFallback(payload);
         setStatus("ok (auto)", "#4ade80");
         const reply =
