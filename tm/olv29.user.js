@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         OLV29 Auto-Reply AI Assistant
 // @namespace    tamper-datingops
-// @version      1.9
+// @version      1.10
 // @description  OLV専用AIパネル（mem44互換、DOMだけOLV対応）
 // @author       coogee2033
 // @match        https://olv29.com/*
@@ -34,7 +34,7 @@
     - div.inbox
 */
 
-console.log("OLV29 Auto-Reply AI Assistant v1.9");
+console.log("OLV29 Auto-Reply AI Assistant v1.10");
 
 (() => {
   "use strict";
@@ -116,9 +116,9 @@ console.log("OLV29 Auto-Reply AI Assistant v1.9");
       el.style.setProperty("left", "8px", "important");
       el.style.removeProperty("right");
       el.style.setProperty("bottom", "16px", "important");
-      el.style.setProperty("width", "230px", "important");
-      el.style.setProperty("min-width", "230px", "important");
-      el.style.setProperty("max-width", "230px", "important");
+      el.style.setProperty("width", "260px", "important");
+      el.style.setProperty("min-width", "260px", "important");
+      el.style.setProperty("max-width", "260px", "important");
     } else {
       el.style.setProperty("right", "16px", "important");
       el.style.removeProperty("left");
