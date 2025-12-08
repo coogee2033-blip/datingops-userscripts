@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         OLV29 Auto-Reply AI Assistant
 // @namespace    tamper-datingops
-// @version      1.8
+// @version      1.9
 // @description  OLV専用AIパネル（mem44互換、DOMだけOLV対応）
 // @author       coogee2033
 // @match        https://olv29.com/*
@@ -34,7 +34,7 @@
     - div.inbox
 */
 
-console.log("OLV29 Auto-Reply AI Assistant v1.8");
+console.log("OLV29 Auto-Reply AI Assistant v1.9");
 
 (() => {
   "use strict";
@@ -62,7 +62,7 @@ console.log("OLV29 Auto-Reply AI Assistant v1.8");
   const MEMO_WEBHOOKS = WEBHOOKS.map((u) =>
     u.replace(/\/chat-v2$/, "/memo-update")
   );
-  const PANEL_ID = "olv29-ai-panel";
+  const PANEL_ID = "datingops-ai-panel";
   const AUTO_SEND_ON_LOAD = true;
   const AUTO_SEND_ON_NEW_MALE = false;
   const LOAD_DELAY_MS = 600;
@@ -73,6 +73,7 @@ console.log("OLV29 Auto-Reply AI Assistant v1.8");
   // 自由メモ dirty フラグ（送信時自動保存用）
   let pairMemoDirty = false;
   let pairMemoInitialValue = null;
+  let panelUserDragged = false;
 
   /** ===== util ===== */
   const qs = (s, r = document) => r.querySelector(s);
@@ -100,13 +101,42 @@ console.log("OLV29 Auto-Reply AI Assistant v1.8");
   }
 
   /** ===== パネル（ドラッグ可） ===== */
+  function forceAiPanelLayout(panel) {
+    const el = panel || qs("#" + PANEL_ID) || qs(".datingops-ai-panel");
+    if (!el) return;
+    if (panelUserDragged) return;
+
+    const isPersonalBox = location.pathname.includes("/staff/personalbox");
+    el.classList.add("datingops-ai-panel");
+    el.style.setProperty("position", "fixed", "important");
+    el.style.setProperty("box-sizing", "border-box", "important");
+    el.style.setProperty("z-index", "999999", "important");
+
+    if (isPersonalBox) {
+      el.style.setProperty("left", "8px", "important");
+      el.style.removeProperty("right");
+      el.style.setProperty("bottom", "16px", "important");
+      el.style.setProperty("width", "230px", "important");
+      el.style.setProperty("min-width", "230px", "important");
+      el.style.setProperty("max-width", "230px", "important");
+    } else {
+      el.style.setProperty("right", "16px", "important");
+      el.style.removeProperty("left");
+      el.style.setProperty("bottom", "16px", "important");
+      el.style.setProperty("width", "320px", "important");
+      el.style.setProperty("min-width", "320px", "important");
+      el.style.setProperty("max-width", "320px", "important");
+    }
+  }
+
   function ensurePanel() {
     if (qs("#" + PANEL_ID)) return;
     const wrap = document.createElement("div");
     wrap.id = PANEL_ID;
+    wrap.classList.add("datingops-ai-panel");
     wrap.style.cssText = `
-      position:fixed; left:16px; bottom:16px; z-index:999999;
-      width:320px; background:#111; color:#eee; border-radius:12px;
+      position:fixed; z-index:999999;
+      background:#111; color:#eee; border-radius:12px;
       box-shadow:0 12px 30px rgba(0,0,0,.35); font-family:system-ui,-apple-system,Segoe UI,sans-serif;
     `;
     wrap.innerHTML = `
@@ -137,6 +167,16 @@ console.log("OLV29 Auto-Reply AI Assistant v1.8");
         </div>
       </div>`;
     document.body.appendChild(wrap);
+    forceAiPanelLayout(wrap);
+
+    let layoutTimer = null;
+    const scheduleLayout = () => {
+      if (panelUserDragged) return;
+      if (layoutTimer) clearTimeout(layoutTimer);
+      layoutTimer = setTimeout(() => forceAiPanelLayout(wrap), 120);
+    };
+    window.addEventListener("resize", scheduleLayout);
+    window.addEventListener("scroll", scheduleLayout);
 
     // Drag
     (function dragify(box, handle) {
@@ -147,6 +187,7 @@ console.log("OLV29 Auto-Reply AI Assistant v1.8");
         dragging = false;
       const onDown = (e) => {
         dragging = true;
+        panelUserDragged = true;
         sx = e.clientX;
         sy = e.clientY;
         const r = box.getBoundingClientRect();
